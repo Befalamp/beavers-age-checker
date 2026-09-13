@@ -27,15 +27,53 @@
     padding: 8px 14px; border-radius: 8px; font-weight: 600; display: none;
   }
   main { width: 100%; max-width: 380px; padding: 24px 20px; }
-  label { font-weight: 600; display: block; margin-bottom: 8px; }
-  input[type=date] {
-    width: 100%; padding: 12px; font-size: 1.1rem;
-    border: 1px solid #ccc; border-radius: 8px;
+  label { font-weight: 600; display: block; margin-bottom: 12px; }
+
+  .wheels {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    height: 180px;
+    overflow: hidden;
   }
+  .wheel-col {
+    flex: 1;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .wheel-col::-webkit-scrollbar { display: none; }
+  .wheel-item {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: center;
+    font-size: 1.1rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .wheel-item.selected { color: var(--text); font-weight: 700; font-size: 1.25rem; }
+  .wheel-highlight {
+    position: absolute;
+    top: 68px; height: 44px; left: 0; right: 0;
+    border-top: 1px solid #ddd; border-bottom: 1px solid #ddd;
+    pointer-events: none;
+  }
+  .wheel-fade-top, .wheel-fade-bottom {
+    position: absolute; left: 0; right: 0; height: 68px; pointer-events: none; z-index: 2;
+  }
+  .wheel-fade-top { top: 0; background: linear-gradient(white, rgba(255,255,255,0)); }
+  .wheel-fade-bottom { bottom: 0; background: linear-gradient(rgba(255,255,255,0), white); }
+
   #result {
     margin-top: 24px; padding: 20px; border-radius: 12px;
     background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    text-align: center; display: none;
+    text-align: center;
   }
   #result .verdict { font-size: 1.6rem; font-weight: 700; }
   #result.yes .verdict { color: var(--green); }
@@ -51,15 +89,63 @@
 </header>
 
 <main>
-  <label for="dob">Date of birth</label>
-  <input type="date" id="dob" />
+  <label>Date of birth</label>
+
+  <div class="wheels">
+    <div class="wheel-col" id="dayCol"></div>
+    <div class="wheel-col" id="monthCol"></div>
+    <div class="wheel-col" id="yearCol"></div>
+    <div class="wheel-highlight"></div>
+    <div class="wheel-fade-top"></div>
+    <div class="wheel-fade-bottom"></div>
+  </div>
+
   <div id="result">
-    <div class="verdict" id="verdict"></div>
-    <div class="detail" id="detail"></div>
+    <div class="verdict" id="verdict">—</div>
+    <div class="detail" id="detail">Scroll the wheels to set a date of birth</div>
   </div>
 </main>
 
 <script>
+const ITEM_H = 44;
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const YEARS = [];
+for (let y = 2015; y <= new Date().getFullYear() + 1; y++) YEARS.push(y);
+
+function buildWheel(colEl, items, defaultIndex) {
+  colEl.style.paddingTop = "68px";
+  colEl.style.paddingBottom = "68px";
+  items.forEach((label) => {
+    const div = document.createElement("div");
+    div.className = "wheel-item";
+    div.textContent = label;
+    colEl.appendChild(div);
+  });
+  colEl.scrollTop = defaultIndex * ITEM_H;
+}
+
+const dayCol = document.getElementById("dayCol");
+const monthCol = document.getElementById("monthCol");
+const yearCol = document.getElementById("yearCol");
+
+const days = Array.from({length: 31}, (_, i) => i + 1);
+buildWheel(dayCol, days, 0);
+buildWheel(monthCol, MONTHS, 0);
+const defaultYearIndex = YEARS.indexOf(2021);
+buildWheel(yearCol, YEARS, defaultYearIndex >= 0 ? defaultYearIndex : 0);
+
+function getSelectedIndex(colEl) {
+  return Math.round(colEl.scrollTop / ITEM_H);
+}
+
+function markSelected(colEl, items) {
+  const idx = Math.min(items.length - 1, Math.max(0, getSelectedIndex(colEl)));
+  [...colEl.children].forEach((child, i) => {
+    child.classList.toggle("selected", i === idx);
+  });
+  return idx;
+}
+
 function addYearsMonths(date, years, months) {
   const d = new Date(date);
   d.setFullYear(d.getFullYear() + years);
@@ -70,25 +156,41 @@ function formatDate(d) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-document.getElementById("dob").addEventListener("change", (e) => {
-  const val = e.target.value;
-  const resultEl = document.getElementById("result");
-  if (!val) { resultEl.style.display = "none"; return; }
+function recalc() {
+  const dIdx = markSelected(dayCol, days);
+  const mIdx = markSelected(monthCol, MONTHS);
+  const yIdx = markSelected(yearCol, YEARS);
 
-  const dob = new Date(val + "T00:00:00");
+  const day = days[dIdx];
+  const month = mIdx;
+  const year = YEARS[yIdx];
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const safeDay = Math.min(day, daysInMonth);
+
+  const dob = new Date(year, month, safeDay);
   const eligibleDate = addYearsMonths(dob, 5, 9);
   const today = new Date(); today.setHours(0,0,0,0);
   const isEligible = eligibleDate <= today;
 
-  resultEl.style.display = "block";
+  const resultEl = document.getElementById("result");
   resultEl.className = isEligible ? "yes" : "no";
   document.getElementById("verdict").textContent = isEligible ? "Yes" : "No";
   document.getElementById("detail").textContent = isEligible
     ? `Eligible since ${formatDate(eligibleDate)}`
     : `Eligible from ${formatDate(eligibleDate)}`;
+}
+
+let scrollTimeout;
+[dayCol, monthCol, yearCol].forEach((col) => {
+  col.addEventListener("scroll", () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(recalc, 80);
+  });
 });
 
-// Install prompt
+recalc();
+
 let deferredPrompt;
 const installBtn = document.getElementById("installBtn");
 window.addEventListener("beforeinstallprompt", (e) => {
