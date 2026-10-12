@@ -79,6 +79,9 @@
   #result.yes .verdict { color: var(--green); }
   #result.no .verdict { color: #C97F1E; }
   #result .detail { margin-top: 8px; color: var(--muted); }
+  #result .age { margin-top: 14px; padding-top: 14px; border-top: 1px solid #eee; }
+  #result .age .age-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  #result .age .age-value { font-size: 1.15rem; font-weight: 600; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -103,6 +106,10 @@
   <div id="result">
     <div class="verdict" id="verdict">—</div>
     <div class="detail" id="detail">Scroll the wheels to set a date of birth</div>
+    <div class="age">
+      <div class="age-label">Age today</div>
+      <div class="age-value" id="ageValue">—</div>
+    </div>
   </div>
 </main>
 
@@ -147,13 +154,37 @@ function markSelected(colEl, items) {
 }
 
 function addYearsMonths(date, years, months) {
-  const d = new Date(date);
-  d.setFullYear(d.getFullYear() + years);
-  d.setMonth(d.getMonth() + months);
-  return d;
+  // Calendar-month arithmetic: same day number, but if that day doesn't exist
+  // in the target month (e.g. 31st into a 28-day February), use the month's last day.
+  const total = date.getMonth() + months;
+  const targetYear = date.getFullYear() + years + Math.floor(total / 12);
+  const targetMonth = ((total % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(date.getDate(), lastDay));
 }
 function formatDate(d) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function ageBetween(dob, today) {
+  let years = today.getFullYear() - dob.getFullYear();
+  let months = today.getMonth() - dob.getMonth();
+  let days = today.getDate() - dob.getDate();
+
+  if (days < 0) {
+    months--;
+    // borrow the length of the month before today's month
+    days += new Date(today.getFullYear(), today.getMonth(), 0).getDate();
+  }
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+  return { years, months, days };
 }
 
 function recalc() {
@@ -179,6 +210,14 @@ function recalc() {
   document.getElementById("detail").textContent = isEligible
     ? `Eligible since ${formatDate(eligibleDate)}`
     : `Eligible from ${formatDate(eligibleDate)}`;
+
+  const ageEl = document.getElementById("ageValue");
+  if (dob > today) {
+    ageEl.textContent = "Not born yet";
+  } else {
+    const a = ageBetween(dob, today);
+    ageEl.textContent = `${plural(a.years, "year")}, ${plural(a.months, "month")}, ${plural(a.days, "day")}`;
+  }
 }
 
 let scrollTimeout;
